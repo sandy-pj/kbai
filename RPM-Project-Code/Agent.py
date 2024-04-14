@@ -178,78 +178,29 @@ class Agent:
         self.problem = problem
 
         # Image processing
-        self.A = Image.open(problem.figures['A'].visualFilename).convert('L')
-        self.A = cv2.imread(problem.figures['A'].visualFilename, 0)
-        _, self.A = cv2.threshold(self.A, 127, 255, cv2.THRESH_BINARY)
-        self.B = Image.open(problem.figures['B'].visualFilename).convert('L')
-        self.B = cv2.imread(problem.figures['B'].visualFilename, 0)
-        _, self.B = cv2.threshold(self.B, 127, 255, cv2.THRESH_BINARY)
-        self.C = Image.open(problem.figures['C'].visualFilename).convert('L')
-        self.C = cv2.imread(problem.figures['C'].visualFilename, 0)
-        _, self.C = cv2.threshold(self.C, 127, 255, cv2.THRESH_BINARY)
-        if problem.problemType == "3x3":
-            self.D = Image.open(problem.figures['D'].visualFilename).convert('L')
-            self.D = cv2.imread(problem.figures['D'].visualFilename, 0)
-            _, self.D = cv2.threshold(self.D, 127, 255, cv2.THRESH_BINARY)
-            self.E = Image.open(problem.figures['E'].visualFilename).convert('L')
-            self.E = cv2.imread(problem.figures['E'].visualFilename, 0)
-            _, self.E = cv2.threshold(self.E, 127, 255, cv2.THRESH_BINARY)
-            self.F = Image.open(problem.figures['F'].visualFilename).convert('L')
-            self.F = cv2.imread(problem.figures['F'].visualFilename, 0)
-            _, self.F = cv2.threshold(self.F, 127, 255, cv2.THRESH_BINARY)
-            self.G = Image.open(problem.figures['G'].visualFilename).convert('L')
-            self.G = cv2.imread(problem.figures['G'].visualFilename, 0)
-            _, self.G = cv2.threshold(self.G, 127, 255, cv2.THRESH_BINARY)
-            self.H = Image.open(problem.figures['H'].visualFilename).convert('L')
-            self.H = cv2.imread(problem.figures['H'].visualFilename, 0)
-            _, self.H = cv2.threshold(self.H, 127, 255, cv2.THRESH_BINARY)
-        self.one = Image.open(problem.figures['1'].visualFilename).convert('L')
-        self.one = cv2.imread(problem.figures['1'].visualFilename, 0)
-        _, self.one = cv2.threshold(self.one, 127, 255, cv2.THRESH_BINARY)
-        self.two = Image.open(problem.figures['2'].visualFilename).convert('L')
-        self.two = cv2.imread(problem.figures['2'].visualFilename, 0)
-        _, self.two = cv2.threshold(self.two, 127, 255, cv2.THRESH_BINARY)
-        self.three = Image.open(problem.figures['3'].visualFilename).convert('L')
-        self.three = cv2.imread(problem.figures['3'].visualFilename, 0)
-        _, self.three = cv2.threshold(self.three, 127, 255, cv2.THRESH_BINARY)
-        self.four = Image.open(problem.figures['4'].visualFilename).convert('L')
-        self.four = cv2.imread(problem.figures['4'].visualFilename, 0)
-        _, self.four = cv2.threshold(self.four, 127, 255, cv2.THRESH_BINARY)
-        self.five = Image.open(problem.figures['5'].visualFilename).convert('L')
-        self.five = cv2.imread(problem.figures['5'].visualFilename, 0)
-        _, self.five = cv2.threshold(self.five, 127, 255, cv2.THRESH_BINARY)
-        self.six = Image.open(problem.figures['6'].visualFilename).convert('L')
-        self.six = cv2.imread(problem.figures['6'].visualFilename, 0)
-        _, self.six = cv2.threshold(self.six, 127, 255, cv2.THRESH_BINARY)
-        if problem.problemType == "3x3":
-            self.seven = Image.open(problem.figures['7'].visualFilename).convert('L')
-            self.seven = cv2.imread(problem.figures['7'].visualFilename, 0)
-            _, self.seven = cv2.threshold(self.seven, 127, 255, cv2.THRESH_BINARY)
-            self.eight = Image.open(problem.figures['8'].visualFilename).convert('L')
-            self.eight = cv2.imread(problem.figures['8'].visualFilename, 0)
-            _, self.eight = cv2.threshold(self.eight, 127, 255, cv2.THRESH_BINARY)
+        images = self.dataset_from_problem(problem)
 
-        self.answers = [self.one, self.two, self.three, self.four, self.five, self.six]
+        self.answers = [images['1'], images['2'], images['3'], images['4'], images['5'], images['6']]
         if problem.problemType == "3x3":
-            self.answers.append(self.seven)
-            self.answers.append(self.eight)
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
 
 
         if self.problem.problemSetName in {"Basic Problems D", "Test Problems D", "Challenge Problems D", "Raven's Problems D"}:
-            diff_bc = cv2.bitwise_xor(self.B, self.C)
-            common_gh = cv2.bitwise_or(self.G, self.H)
-            ans_diff = [cv2.bitwise_xor(self.H, ans) for ans in self.answers]
-            ans_common = [cv2.bitwise_or(self.H, ans) for ans in self.answers]
+            diff_bc = cv2.bitwise_xor(images['B'], images['C'])
+            common_gh = cv2.bitwise_or(images['G'], images['H'])
+            ans_diff = [cv2.bitwise_xor(images['H'], ans) for ans in self.answers]
+            ans_common = [cv2.bitwise_or(images['H'], ans) for ans in self.answers]
 
-            threshold_max = np.sum(diff_bc) * 1.5
-            threshold_min = np.sum(diff_bc) * 0.6
+            threshold_max = np.sum(diff_bc) * 1.2
+            threshold_min = np.sum(diff_bc) * 0.8
             threshold_list = [common for (common, diff) in zip(ans_common, ans_diff) if threshold_min <= np.sum(diff) <= threshold_max]
 
             # find the answer with the closest common
             closest_index = np.argmin( [np.sum( _common - common_gh ) for _common in ans_common] )
             return closest_index+1
         elif self.problem.problemSetName in {"Basic Problems E", "Test Problems E", "Challenge Problems E", "Raven's Problems E"}:
-            bitwise_and_gh = cv2.bitwise_and(self.G, self.H)
+            bitwise_and_gh = cv2.bitwise_and(images['G'], images['H'])
             ans_and = [cv2.bitwise_and(bitwise_and_gh, ans) for ans in self.answers]
             closest_index = np.argmin( [np.sum(_and - bitwise_and_gh) for _and in ans_and] )
             return closest_index+1
