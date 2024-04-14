@@ -63,8 +63,6 @@ class TransformationSuggester:
                     if _d < min_distance:
                         min_distance = _d
                         res = (TransformationSuggester._flip, {'axis': axis})
-            else:
-                pass
         return res
 
     def apply_transformation(self, np_image, func_trans, *args):
@@ -102,21 +100,9 @@ class Agent:
 
 
     ops = {'AB': {'action': None},
-           'AC': {'action': None}}
-
-    # hard coded answers for problems that my agent can't solve
-    basic_answers_incorrect = {"Basic Problem B-04": 3,
-                               "Basic Problem B-09": 5,
-                               "Basic Problem C-07": 2,
-                               "Basic Problem C-09": 2,
-                               "Basic Problem D-02": 1,
-                               "Basic Problem D-04": 1,
-                               "Basic Problem D-05": 7,
-                               "Basic Problem D-08": 4,
-                               "Basic Problem D-10": 1,
-                               "Basic Problem D-12": 3,
-                               "Basic Problem E-04": 8,
-                               "Basic Problem E-12": 6}
+           'AC': {'action': None},
+           'BC': {'action': None}, # 3x3 horizontal
+           'DG': {'action': None}} # 3x3 vertical
 
     answers = []
 
@@ -143,13 +129,25 @@ class Agent:
             idealImages.append(t.apply_transformation(images['B'], self.ops['AC']['action'][0], self.ops['AC']['action'][1]))
             # [Image.fromarray(idealImages[_]).save('/tmp/idealImage_%s.png' % _ ) for _ in range(len(idealImages))]
             return idealImages
+        elif problem.problemType == '3x3':
+            t = TransformationSuggester()
+            self.ops['BC']['action'] = t.suggest_transformation(images['B'], images['C'])
+            self.ops['DG']['action'] = t.suggest_transformation(images['D'], images['G'])
+            if DEBUG: print("BC: %s, DG: %s" % (self.ops['BC']['action'], self.ops['DG']['action']))
+            idealImages = []
+            idealImages.append(t.apply_transformation(images['H'], self.ops['BC']['action'][0], self.ops['BC']['action'][1]))
+            idealImages.append(t.apply_transformation(images['F'], self.ops['DG']['action'][0], self.ops['DG']['action'][1]))
+            return idealImages
+
     def find_best_match(self, problem, idealImages):
         # Find the best match
         best_matches = []
         images = self.dataset_from_problem(problem)
 
         min_distance_dict = {}
-        for i in range(1, 7):
+        for i in range(1, 9):
+            if problem.problemType == '2x2' and i in [7,8]:
+                continue
             min_distance = float('inf')
             for idealImage in idealImages:
                 _d = l2distance(images[str(i)], idealImage)
@@ -161,19 +159,22 @@ class Agent:
         print("%s: Best matches %s" % (problem.name, best_matches))
         return best_matches
 
-    def Solve_old(self, problem):
-        # Your code goes here
-        if problem.problemType == '3x3':
-            return 1
+    def Solve(self, problem):
+        if 'D' in problem.problemSetName:
+            return self.Solve_DE(problem)
+        elif 'E' in problem.problemSetName:
+            return self.Solve_DE(problem)
+        else:
+            return self.Solve_Others(problem)
+
+    def Solve_Others(self, problem):
         # get the ideal image
         goalImages = self.getIdealImage(problem)
         # find the best match
         best_matches = self.find_best_match(problem, goalImages)
         return best_matches[0]
 
-    def Solve(self, problem):
-        # if problem.name in self.basic_answers_incorrect:
-        #     return self.basic_answers_incorrect[problem.name]
+    def Solve_DE(self, problem):
         self.problem = problem
 
         # Image processing
@@ -233,60 +234,28 @@ class Agent:
             self.answers.append(self.seven)
             self.answers.append(self.eight)
 
-        # For Problem C Questions
-        # Check if the problem set name is in the desired list
-        if self.problem.problemSetName in {"Basic Problems C", "Test Problems C", "Challenge Problems C", "Raven's Problems C"}:
-            # Calculate shared DPR and IPR values upfront to avoid duplication
-            dpr_gh = self.calculate_DPR(self.G, self.H)
-            dpr_bc = self.calculate_DPR(self.B, self.C)
-            ipr_gh = self.calculate_IPR(self.G, self.H)
-            ipr_bc = self.calculate_IPR(self.B, self.C)
 
-            answers_dpr = [self.calculate_DPR(self.H, ans) for ans in self.answers]
-            answers_ipr = [self.calculate_IPR(self.H, ans) for ans in self.answers]
+        if self.problem.problemSetName in {"Basic Problems D", "Test Problems D", "Challenge Problems D", "Raven's Problems D"}:
+            diff_bc = cv2.bitwise_xor(self.B, self.C)
+            common_gh = cv2.bitwise_or(self.G, self.H)
+            ans_diff = [cv2.bitwise_xor(self.H, ans) for ans in self.answers]
+            ans_common = [cv2.bitwise_or(self.H, ans) for ans in self.answers]
 
-            # For 2 x 2 Questions, prepend the DPR and IPR calculated with A and B
-            if self.problem.problemType == "2x2":
-                dpr_ab = self.calculate_DPR(self.A, self.B)
-                ipr_ab = self.calculate_IPR(self.A, self.B)
-                answers_dpr = [dpr_ab] + answers_dpr
-                answers_ipr = [ipr_ab] + answers_ipr
+            threshold_max = np.sum(diff_bc) * 1.5
+            threshold_min = np.sum(diff_bc) * 0.6
+            threshold_list = [common for (common, diff) in zip(ans_common, ans_diff) if threshold_min <= np.sum(diff) <= threshold_max]
 
-            # Calculate thresholds
-            threshold_max_gh = dpr_gh + 2
-            threshold_min_gh = dpr_gh - 2
-            threshold_max_bc = dpr_bc + 2
-            threshold_min_bc = dpr_bc - 2
-
-            # Filter answers based on DPR threshold
-            threshold_list = [ipr for dpr, ipr in zip(answers_dpr, answers_ipr) if threshold_min_gh <= dpr <= threshold_max_gh]
-
-            print("%s:\n DPR_GH = %s, IPR_GH = %s\n answers_dpr: %s\n answers_ipr: %s\n\n" % (self.problem.name, dpr_gh, ipr_gh, answers_dpr, answers_ipr))
-
-            if not threshold_list:
-                # Find the closest DPR value to DPR_G_H if no answers meet the threshold
-                closest_index = np.argmin(np.abs(np.array(answers_dpr) - dpr_gh))
-                return closest_index + 1
-
-            # Find the answer with IPR closest to IPR_G_H from the filtered list
-            closest_value_index = np.argmin(np.abs(np.array(threshold_list) - ipr_gh))
-            return answers_ipr.index(threshold_list[closest_value_index]) + 1
-
+            # find the answer with the closest common
+            closest_index = np.argmin( [np.sum( _common - common_gh ) for _common in ans_common] )
+            return closest_index+1
+        elif self.problem.problemSetName in {"Basic Problems E", "Test Problems E", "Challenge Problems E", "Raven's Problems E"}:
+            bitwise_and_gh = cv2.bitwise_and(self.G, self.H)
+            ans_and = [cv2.bitwise_and(bitwise_and_gh, ans) for ans in self.answers]
+            closest_index = np.argmin( [np.sum(_and - bitwise_and_gh) for _and in ans_and] )
+            return closest_index+1
         return 1
 
-    def calculate_DPR(self, image1, image2):
-        dpr_1 = np.sum(image1)/np.size(image1)
-        dpr_2 = np.sum(image2)/np.size(image2)
-        return dpr_1 - dpr_2
 
-    def calculate_IPR(self, image1, image2):
-        intersection = cv2.bitwise_or(image1, image2)
-        ###
-        # cv2.imshow("intersection", intersection)
-        # cv2.waitKey(0)
-        ###
-        intersection_pixels = np.sum(intersection)
-        return (intersection_pixels/np.sum(image1)) - (intersection_pixels/np.sum(image2))
 
 
     def calculate_bitwise(self, image1, image2):
@@ -303,7 +272,7 @@ class Agent:
         cv2.waitKey(0)
         cv2.imshow("bitwise_and_h", bitwise_and_h)
         cv2.waitKey(0)
-        ###
+
 
     def dataset_from_problem(self, problem):
         if problem.problemType == '2x2':
@@ -368,10 +337,10 @@ class Agent:
 
 
 
-if __name__ == "__main__":
-    agent = Agent()
-    problem_set = ProblemSet("Basic Problems C")
-    for i in range(1, 12):
-        problem = problem_set.problems[i]
-        ans = agent.Solve(problem)
-        print("Problem %s: %s" % (problem.name, ans))
+# if __name__ == "__main__":
+    # agent = Agent()
+    # problem_set = ProblemSet("Basic Problems C")
+    # for i in range(1, 12):
+    #     problem = problem_set.problems[i]
+    #     ans = agent.Solve(problem)
+    #     print("Problem %s: %s" % (problem.name, ans))
