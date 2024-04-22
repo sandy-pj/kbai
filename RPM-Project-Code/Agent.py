@@ -184,6 +184,72 @@ class Agent:
         if "Problems B" in problem.problemSetName:
             return self.Solve_w_metrics(problem, images)
 
+    def Solve_v2(self, problem, images):
+        if problem.problemType == '2x2':
+            # A B
+            # C D ====> D
+
+            # Horizontal: AB -> CD
+            # Vertical: AC -> BD
+            dprAB = self._DPR(images['A'], images['B'])
+            iprAB = self._IPR(images['A'], images['B'])
+            dprAC = self._DPR(images['A'], images['C'])
+            iprAC = self._IPR(images['A'], images['C'])
+            dprCDs = [self._DPR(images['C'], img) for img in self.answers]
+            iprCDs = [self._IPR(images['C'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(6):
+                if np.abs(iprAB * iprCDs[index]) < 2 or np.abs(iprAC * iprCDs[index]) < 2:
+                    next_round_roster.append(index)
+            if len(next_round_roster) > 0:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in range(6)] ) + 1
+            return choose
+        if problem.problemType == "3x3":
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
+
+        # Calculate the metrics
+        # A B C
+        # D E F
+        # G H I
+
+        # Horizontal: HI <- GH
+        # Vertical: FI <- CF
+        # Diagnal: EI <- AE
+
+        ## the candidate image with the smallest abs dpr has the highest dpr score
+        dprGH = self._DPR(images['G'], images['H'])
+        iprGH = self._IPR(images['G'], images['H'])
+        dprCF = self._DPR(images['C'], images['F'])
+        iprCF = self._IPR(images['C'], images['F'])
+        dprAE = self._DPR(images['A'], images['E'])
+        iprAE = self._IPR(images['A'], images['E'])
+        dprHIs = [self._DPR(images['H'], img) for img in self.answers]
+        iprHIs = [self._IPR(images['H'], img) for img in self.answers]
+        dprFIs = [self._DPR(images['F'], img) for img in self.answers]
+        iprFIs = [self._IPR(images['F'], img) for img in self.answers]
+        dprEIs = [self._DPR(images['E'], img) for img in self.answers]
+        iprEIs = [self._IPR(images['E'], img) for img in self.answers]
+
+
+        scores = [ \
+                    normal_pdf(dprHIs[i], dprGH, 1)  + \
+                    normal_pdf(iprHIs[i], iprGH, 1) + \
+                    normal_pdf(dprFIs[i], dprCF, 1)  + \
+                    normal_pdf(iprFIs[i], iprCF, 1) + \
+                    normal_pdf(dprEIs[i], dprAE, 1)  + \
+                    normal_pdf(iprEIs[i], iprAE, 1) \
+            for i in range(8)
+        ]
+
+
+        choose = np.argmax(scores)+1
+
+        return choose
+
     def Solve_w_metrics(self, problem, images):
         if problem.problemType == '2x2':
             # A B
@@ -241,9 +307,7 @@ class Agent:
         print("%s: Best match %s" % (problem.name, choose))
         print("DPR %s: %s" % (dprBC, dprHIs)) if DEBUG else None
         print("IPR %s: %s" % (iprBC, iprHIs)) if DEBUG else None
-        print("DPR scores: %s" % scores) if DEBUG else None
-        # print("IPR scores: %s" % iprscores) if DEBUG else None
-        # print("TTL scores: %s" % totalsocres) if DEBUG else None
+        print("Sores: %s" % scores) if DEBUG else None
         print("\n")
         return choose
 
