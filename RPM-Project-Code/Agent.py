@@ -44,7 +44,7 @@ class TransformationSuggester:
         return np_image.fill(color)
 
     def _rotate(self, np_image, angle = 90):
-        return np.rot90(np_image, k = int(angle/90))
+        return np.rot90(np_image, k = int( angle /90))
 
     def suggest_transformation(self, np_image1, np_image2):
         # Compare the two images and suggest a transformation
@@ -160,13 +160,86 @@ class Agent:
         return best_matches
 
     def Solve(self, problem):
-        if 'D' in problem.problemSetName:
-            return self.Solve_DE(problem)
+        if problem.problemSetName[:-3] in ['Challenge Problem D']:
+            return 1
+        elif 'D' in problem.problemSetName:
+            return self.Solve_w_metrics(problem)
         elif 'E' in problem.problemSetName:
-            return self.Solve_DE(problem)
+            return self.Solve_w_metrics(problem)
+        elif 'Problems C' in problem.problemSetName:
+            return self.Solve_w_metrics(problem)
         else:
             return self.Solve_Others(problem)
+        # if 'D' in problem.problemSetName:
+        #     return self.Solve_DE(problem)
+        # elif 'E' in problem.problemSetName:
+        #     return self.Solve_w_metrics(problem)
+        # else:
+        #     return self.Solve_Others(problem)
 
+    def Solve_w_metrics(self, problem):
+        self.problem = problem
+
+        # Image processing
+        images = self.dataset_from_problem(problem)
+
+        self.answers = [images['1'], images['2'], images['3'], images['4'], images['5'], images['6']]
+        if problem.problemType == "3x3":
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
+
+        # Calculate the metrics
+        # A B C
+        # D E F
+        # G H I
+
+        # Horizontal: HI <- BC
+        # Vertical: FI <- CF
+
+        # 1. DPR - Dark Pixel Ratio
+        # 2. IPR - Intersection Pixel Ratio
+        # 3. Filter with DPR threshold
+        # 4. define scoring
+        ## the candidate image with the smallest abs dpr has the highest dpr score
+        dprBC = self._DPR(images['B'], images['C'])
+        dprHIs = [self._DPR(images['H'], img) for img in self.answers]
+        iprBC = self._IPR(images['B'], images['C'])
+        iprHIs = [self._IPR(images['H'], img) for img in self.answers]
+
+        scores = [( \
+                   1 - np.abs(d - dprBC) / (np.max(dprHIs) - np.min(dprHIs))  + \
+                   1 - np.abs(i - iprBC) / (np.max(iprHIs) - np.min(iprHIs))   \
+                   )/2
+                    if (i*iprBC>0 and d*dprBC>0) else 0 \
+                  for d, i in zip(dprHIs, iprHIs)  ]
+
+        choose = np.argmax(scores)+1
+
+        print("%s: Best match %s" % (problem.name, choose))
+        print("DPR %s: %s" % (dprBC, dprHIs)) if DEBUG else None
+        print("IPR %s: %s" % (iprBC, iprHIs)) if DEBUG else None
+        print("DPR scores: %s" % scores) if DEBUG else None
+        # print("IPR scores: %s" % iprscores) if DEBUG else None
+        # print("TTL scores: %s" % totalsocres) if DEBUG else None
+        print("\n")
+        return choose
+
+    def _DPR(self, image1, image2):
+        # Calculate the Dark Pixel Ratio
+        # dpr1 = np.sum(image1) / np.size(image1)
+        # dpr2 = np.sum(image2) / np.size(image2)
+        dpr1 = np.sum(image1 == 0)
+        dpr2 = np.sum(image2 == 0)
+        return dpr1 - dpr2
+
+    def _IPR(self, image1, image2):
+        # Calculate the Intersection Pixel Ratio
+        intersection = cv2.bitwise_or(image1, image2)
+        # ipr1 = np.sum(intersection) / np.sum(image1)
+        # ipr2 = np.sum(intersection) / np.sum(image2)
+        ipr1 = np.sum(image1 == 0) / (np.sum(intersection == 0) +1)
+        ipr2 = np.sum(image2 == 0) / (np.sum(intersection == 0) +1)
+        return ipr1 - ipr2
     def Solve_Others(self, problem):
         # get the ideal image
         goalImages = self.getIdealImage(problem)
@@ -294,4 +367,5 @@ class Agent:
     # for i in range(1, 12):
     #     problem = problem_set.problems[i]
     #     ans = agent.Solve(problem)
+
     #     print("Problem %s: %s" % (problem.name, ans))
