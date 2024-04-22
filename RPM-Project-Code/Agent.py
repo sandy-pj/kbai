@@ -17,6 +17,8 @@ import cv2
 from ProblemSet import ProblemSet
 
 DEBUG = 1
+def normal_pdf(x, mu, sigma):
+    return 1/(sigma * np.sqrt(2 * np.pi)) * np.exp(-1 * (x - mu)**2 / (2 * sigma**2))
 
 def l2distance(np_image1, np_image2):
     return np.linalg.norm(np_image1 - np_image2)
@@ -160,30 +162,51 @@ class Agent:
         return best_matches
 
     def Solve(self, problem):
-        if problem.problemSetName[:-3] in ['Challenge Problem D']:
-            return 1
-        elif 'D' in problem.problemSetName:
-            return self.Solve_w_metrics(problem)
-        elif 'E' in problem.problemSetName:
-            return self.Solve_w_metrics(problem)
-        elif 'Problems C' in problem.problemSetName:
-            return self.Solve_w_metrics(problem)
-        else:
-            return self.Solve_Others(problem)
-        # if 'D' in problem.problemSetName:
-        #     return self.Solve_DE(problem)
-        # elif 'E' in problem.problemSetName:
-        #     return self.Solve_w_metrics(problem)
-        # else:
-        #     return self.Solve_Others(problem)
-
-    def Solve_w_metrics(self, problem):
         self.problem = problem
 
         # Image processing
         images = self.dataset_from_problem(problem)
 
         self.answers = [images['1'], images['2'], images['3'], images['4'], images['5'], images['6']]
+        if problem.problemType == "3x3":
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
+
+        ########## problem set specific ##########
+        if "Problems C" in problem.problemSetName:
+            return self.Solve_w_metrics(problem, images)
+        if "Challenge Problems D" in problem.problemSetName:
+            return self.Solve_D(problem, images)
+        if "Problems D" in problem.problemSetName:
+            return self.Solve_w_metrics(problem, images)
+        if "Problems E" in problem.problemSetName:
+            return self.Solve_w_metrics(problem, images)
+        if "Problems B" in problem.problemSetName:
+            return self.Solve_w_metrics(problem, images)
+
+    def Solve_w_metrics(self, problem, images):
+        if problem.problemType == '2x2':
+            # A B
+            # C D ====> D
+
+            # Horizontal: AB -> CD
+            # Vertical: AC -> BD
+            dprAB = self._DPR(images['A'], images['B'])
+            iprAB = self._IPR(images['A'], images['B'])
+            dprAC = self._DPR(images['A'], images['C'])
+            iprAC = self._IPR(images['A'], images['C'])
+            dprCDs = [self._DPR(images['C'], img) for img in self.answers]
+            iprCDs = [self._IPR(images['C'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(6):
+                if np.abs(iprAB * iprCDs[index]) < 2 or np.abs(iprAC * iprCDs[index]) < 2:
+                    next_round_roster.append(index)
+            if len(next_round_roster) > 0:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in range(6)] ) + 1
+            return choose
         if problem.problemType == "3x3":
             self.answers.append(images['7'])
             self.answers.append(images['8'])
@@ -207,8 +230,8 @@ class Agent:
         iprHIs = [self._IPR(images['H'], img) for img in self.answers]
 
         scores = [( \
-                   1 - np.abs(d - dprBC) / (np.max(dprHIs) - np.min(dprHIs))  + \
-                   1 - np.abs(i - iprBC) / (np.max(iprHIs) - np.min(iprHIs))   \
+                   normal_pdf(d, dprBC, 1)  + \
+                   normal_pdf(i, iprBC, 1)   \
                    )/2
                     if (i*iprBC>0 and d*dprBC>0) else 0 \
                   for d, i in zip(dprHIs, iprHIs)  ]
@@ -224,21 +247,210 @@ class Agent:
         print("\n")
         return choose
 
+    def Solve_GH(self, problem, images):
+        if problem.problemType == '2x2':
+            # A B
+            # C D ====> D
+
+            # Horizontal: AB -> CD
+            # Vertical: AC -> BD
+            dprAB = self._DPR(images['A'], images['B'])
+            iprAB = self._IPR(images['A'], images['B'])
+            dprAC = self._DPR(images['A'], images['C'])
+            iprAC = self._IPR(images['A'], images['C'])
+            dprCDs = [self._DPR(images['C'], img) for img in self.answers]
+            iprCDs = [self._IPR(images['C'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(6):
+                if np.abs(iprAB * iprCDs[index]) < 2 or np.abs(iprAC * iprCDs[index]) < 2:
+                    next_round_roster.append(index)
+            if len(next_round_roster) > 0:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in range(6)] ) + 1
+            return choose
+        if problem.problemType == "3x3":
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
+
+        # Calculate the metrics
+        # A B C
+        # D E F
+        # G H I
+
+        # Horizontal: HI <- BC
+        # Vertical: FI <- CF
+        # Diagnal: EI <- AE
+
+        # 1. DPR - Dark Pixel Ratio
+        # 2. IPR - Intersection Pixel Ratio
+        # 3. Filter with DPR threshold
+        # 4. define scoring
+        ## the candidate image with the smallest abs dpr has the highest dpr score
+        dprGH = self._DPR(images['G'], images['H'])
+        dprHIs = [self._DPR(images['H'], img) for img in self.answers]
+        iprGH = self._IPR(images['G'], images['H'])
+        iprHIs = [self._IPR(images['H'], img) for img in self.answers]
+
+        scores = [( \
+                   normal_pdf(d, dprGH, 1)  + \
+                   normal_pdf(i, iprGH, 1)   \
+                   )/2
+                    if (i*iprGH>0 and d*dprGH>0) else 0 \
+                  for d, i in zip(dprHIs, iprHIs)  ]
+
+        choose = np.argmax(scores)+1
+
+        return choose
+    def Solve_D(self, problem, images):
+        if problem.problemType == '2x2':
+            # A B
+            # C D ====> D
+
+            # Horizontal: AB -> CD
+            # Vertical: AC -> BD
+            dprAB = self._DPR(images['A'], images['B'])
+            iprAB = self._IPR(images['A'], images['B'])
+            dprAC = self._DPR(images['A'], images['C'])
+            iprAC = self._IPR(images['A'], images['C'])
+            dprCDs = [self._DPR(images['C'], img) for img in self.answers]
+            iprCDs = [self._IPR(images['C'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(6):
+                if np.abs(iprAB * iprCDs[index]) < 2 or np.abs(iprAC * iprCDs[index]) < 2:
+                    next_round_roster.append(index)
+            if len(next_round_roster) > 0:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in range(6)] ) + 1
+            return choose
+        if problem.problemType == "3x3":
+            self.answers.append(images['7'])
+            self.answers.append(images['8'])
+
+        # Calculate the metrics
+        # A B C
+        # D E F
+        # G H I
+
+        # Horizontal: HI <- BC
+        # Vertical: FI <- CF
+        # Diagnal: EI <- AE
+
+        # 1. DPR - Dark Pixel Ratio
+        # 2. IPR - Intersection Pixel Ratio
+        # 3. Filter with DPR threshold
+        # 4. define scoring
+        ## the candidate image with the smallest abs dpr has the highest dpr score
+        dprAE = self._DPR(images['A'], images['E'])
+        dprEIs = [self._DPR(images['E'], img) for img in self.answers]
+        iprAE = self._IPR(images['A'], images['E'])
+        iprEIs = [self._IPR(images['E'], img) for img in self.answers]
+
+        scores = [( \
+                   normal_pdf(d, dprAE, 1)  + \
+                   normal_pdf(i, iprAE, 1)   \
+                   )/2
+                    if (i*iprAE>0 and d*dprAE>0) else 0 \
+                  for d, i in zip(dprEIs, iprEIs)  ]
+
+        choose = np.argmax(scores)+1
+
+        return choose
+    def Solve_C(self, problem, images):
+        if problem.problemType == '2x2':
+            # A B
+            # C D ====> D
+
+            # Horizontal: AB -> CD
+            # Vertical: AC -> BD
+            dprAB = self._DPR(images['A'], images['B'])
+            iprAB = self._IPR(images['A'], images['B'])
+            dprAC = self._DPR(images['A'], images['C'])
+            iprAC = self._IPR(images['A'], images['C'])
+            dprCDs = [self._DPR(images['C'], img) for img in self.answers]
+            iprCDs = [self._IPR(images['C'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(6):
+                if np.abs(iprAB * iprCDs[index]) < 2 or np.abs(iprAC * iprCDs[index]) < 2:
+                    next_round_roster.append(index)
+            if len(next_round_roster) > 0:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprAB - dprCDs[index]) for index in range(6)] ) + 1
+            return choose
+
+        elif self.problem.problemType == '3x3':
+            # Calculate the metrics
+            # A B C
+            # D E F
+            # G H I
+
+            # Horizontal: GH -> HI
+            # Vertical: CF -> FI
+            # Diagnal: AE -> EI
+
+            # 1. DPR - Dark Pixel Ratio
+            # 2. IPR - Intersection Pixel Ratio
+            # 3. Filter with IPR threshold
+            # 4. define scoring
+            ## the candidate image with the smallest abs dpr has the highest dpr score
+            dprGH = self._DPR(images['G'], images['H'])
+            iprGH = self._IPR(images['G'], images['H'])
+            dprCF = self._DPR(images['C'], images['F'])
+            iprCF = self._IPR(images['C'], images['F'])
+            dprAE = self._DPR(images['A'], images['E'])
+            iprAE = self._IPR(images['A'], images['E'])
+            dprHIs = [self._DPR(images['H'], img) for img in self.answers]
+            iprHIs = [self._IPR(images['H'], img) for img in self.answers]
+            dprFIs = [self._DPR(images['F'], img) for img in self.answers]
+            iprFIs = [self._IPR(images['F'], img) for img in self.answers]
+            dprEIs = [self._DPR(images['E'], img) for img in self.answers]
+            iprEIs = [self._IPR(images['E'], img) for img in self.answers]
+
+            next_round_roster = []
+            for index in range(8): # 3x3
+                if np.abs(iprGH * iprHIs[index]) < 2:
+                    next_round_roster.append((index, 'GH'))
+                elif np.abs(iprCF * iprFIs[index]) < 2:
+                    next_round_roster.append((index, 'CF'))
+                elif np.abs(iprAE * iprEIs[index]) < 2:
+                    next_round_roster.append((index, 'AE'))
+
+            if len(next_round_roster) > 0:
+                for index, direction in next_round_roster:
+                    if direction == 'GH':
+                        choose = np.argmin( [np.abs(dprGH - dprHIs[i]) for i, _ in next_round_roster] ) + 1
+                    elif direction == 'CF':
+                        choose = np.argmin( [np.abs(dprCF - dprFIs[i]) for i, _ in next_round_roster] ) + 1
+                    elif direction == 'AE':
+                        choose = np.argmin( [np.abs(dprAE - dprEIs[i]) for i, _ in next_round_roster] ) + 1
+            else:
+                choose = np.argmin( [np.abs(dprGH - dprHIs[index]) for index in range(8)] ) + 1
+
+            #
+            # print("%s: Best match %s" % (problem.name, choose))
+            # print("DPR %s: %s" % (dprBC, dprHIs)) if DEBUG else None
+            # print("IPR %s: %s" % (iprBC, iprHIs)) if DEBUG else None
+            # print("DPR scores: %s" % scores) if DEBUG else None
+            # # print("IPR scores: %s" % iprscores) if DEBUG else None
+            # # print("TTL scores: %s" % totalsocres) if DEBUG else None
+            # print("\n")
+            return choose
     def _DPR(self, image1, image2):
         # Calculate the Dark Pixel Ratio
-        # dpr1 = np.sum(image1) / np.size(image1)
-        # dpr2 = np.sum(image2) / np.size(image2)
-        dpr1 = np.sum(image1 == 0)
-        dpr2 = np.sum(image2 == 0)
+        dpr1 = np.sum(image1) / np.size(image1)
+        dpr2 = np.sum(image2) / np.size(image2)
         return dpr1 - dpr2
 
     def _IPR(self, image1, image2):
         # Calculate the Intersection Pixel Ratio
         intersection = cv2.bitwise_or(image1, image2)
-        # ipr1 = np.sum(intersection) / np.sum(image1)
-        # ipr2 = np.sum(intersection) / np.sum(image2)
-        ipr1 = np.sum(image1 == 0) / (np.sum(intersection == 0) +1)
-        ipr2 = np.sum(image2 == 0) / (np.sum(intersection == 0) +1)
+        ipr1 = np.sum(intersection) / np.sum(image1)
+        ipr2 = np.sum(intersection) / np.sum(image2)
         return ipr1 - ipr2
     def Solve_Others(self, problem):
         # get the ideal image
@@ -247,37 +459,37 @@ class Agent:
         best_matches = self.find_best_match(problem, goalImages)
         return best_matches[0]
 
-    def Solve_DE(self, problem):
-        self.problem = problem
-
-        # Image processing
-        images = self.dataset_from_problem(problem)
-
-        self.answers = [images['1'], images['2'], images['3'], images['4'], images['5'], images['6']]
-        if problem.problemType == "3x3":
-            self.answers.append(images['7'])
-            self.answers.append(images['8'])
-
-
-        if self.problem.problemSetName in {"Basic Problems D", "Test Problems D", "Challenge Problems D", "Raven's Problems D"}:
-            diff_bc = cv2.bitwise_xor(images['B'], images['C'])
-            common_gh = cv2.bitwise_or(images['G'], images['H'])
-            ans_diff = [cv2.bitwise_xor(images['H'], ans) for ans in self.answers]
-            ans_common = [cv2.bitwise_or(images['H'], ans) for ans in self.answers]
-
-            threshold_max = np.sum(diff_bc) * 1.2
-            threshold_min = np.sum(diff_bc) * 0.8
-            threshold_list = [common for (common, diff) in zip(ans_common, ans_diff) if threshold_min <= np.sum(diff) <= threshold_max]
-
-            # find the answer with the closest common
-            closest_index = np.argmin( [np.sum( _common - common_gh ) for _common in ans_common] )
-            return closest_index+1
-        elif self.problem.problemSetName in {"Basic Problems E", "Test Problems E", "Challenge Problems E", "Raven's Problems E"}:
-            bitwise_and_gh = cv2.bitwise_and(images['G'], images['H'])
-            ans_and = [cv2.bitwise_and(bitwise_and_gh, ans) for ans in self.answers]
-            closest_index = np.argmin( [np.sum(_and - bitwise_and_gh) for _and in ans_and] )
-            return closest_index+1
-        return 1
+    # def Solve_DE(self, problem):
+    #     self.problem = problem
+    #
+    #     # Image processing
+    #     images = self.dataset_from_problem(problem)
+    #
+    #     self.answers = [images['1'], images['2'], images['3'], images['4'], images['5'], images['6']]
+    #     if problem.problemType == "3x3":
+    #         self.answers.append(images['7'])
+    #         self.answers.append(images['8'])
+    #
+    #
+    #     if self.problem.problemSetName in {"Basic Problems D", "Test Problems D", "Challenge Problems D", "Raven's Problems D"}:
+    #         diff_bc = cv2.bitwise_xor(images['B'], images['C'])
+    #         common_gh = cv2.bitwise_or(images['G'], images['H'])
+    #         ans_diff = [cv2.bitwise_xor(images['H'], ans) for ans in self.answers]
+    #         ans_common = [cv2.bitwise_or(images['H'], ans) for ans in self.answers]
+    #
+    #         threshold_max = np.sum(diff_bc) * 1.2
+    #         threshold_min = np.sum(diff_bc) * 0.8
+    #         threshold_list = [common for (common, diff) in zip(ans_common, ans_diff) if threshold_min <= np.sum(diff) <= threshold_max]
+    #
+    #         # find the answer with the closest common
+    #         closest_index = np.argmin( [np.sum( _common - common_gh ) for _common in ans_common] )
+    #         return closest_index+1
+    #     elif self.problem.problemSetName in {"Basic Problems E", "Test Problems E", "Challenge Problems E", "Raven's Problems E"}:
+    #         bitwise_and_gh = cv2.bitwise_and(images['G'], images['H'])
+    #         ans_and = [cv2.bitwise_and(bitwise_and_gh, ans) for ans in self.answers]
+    #         closest_index = np.argmin( [np.sum(_and - bitwise_and_gh) for _and in ans_and] )
+    #         return closest_index+1
+    #     return 1
 
 
 
